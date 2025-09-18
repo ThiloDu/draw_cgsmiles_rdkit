@@ -1,0 +1,260 @@
+# ideas:
+# - dont use hydrogens for bead position calculation
+# - remove last capital letter 
+
+
+import cgsmiles
+from cgsmiles.drawing import draw_molecule
+import pysmiles
+
+import io
+from PIL import Image
+import cairosvg
+import numpy as np
+import matplotlib.pyplot as plt
+import networkx as nx
+
+from rdkit import Chem
+from rdkit.Chem.Draw import rdMolDraw2D
+from rdkit.Geometry.rdGeometry import Point2D
+
+def cgsmiles_to_rdkit(mol_graph):
+    mol = Chem.RWMol()
+
+    for node, data in sorted(mol_graph.nodes(data=True)):
+        mol.AddAtom(Chem.Atom(data['element']))
+
+    for i, j, data in mol_graph.edges(data=True):
+        if data['order']==1:
+            bond_order = Chem.rdchem.BondType.SINGLE
+        elif data['order']==2:
+            bond_order = Chem.rdchem.BondType.DOUBLE
+        elif data['order']==3:
+            bond_order = Chem.rdchem.BondType.TRIPLE
+        elif data['order']==1.5:
+            bond_order = Chem.rdchem.BondType.AROMATIC
+        else:  
+            raise ValueError(f"Unsupported bond order: {data['order']}") 
+        mol.AddBond(i,j, bond_order)
+    return mol
+
+def bead_position(mol, fragment_to_atoms, drawer_coords):
+    drawer_coords.DrawMolecule(mol)
+    drawer_coords.FinishDrawing()  # optional but safe
+
+    # compute bead positions
+    bead_positions = []
+    for fragment, nodes in fragment_to_atoms.items():
+        coords = []
+        for node in nodes:
+            coords.append(drawer_coords.GetDrawCoords(node))
+        bead_positions.append(np.mean(coords, axis=0))
+    return np.array(bead_positions) #center of geometry of each fragment, shape (n_fragments, 2)
+
+def _bead_radius(bead_name):
+    match bead_name[0]:
+        case 'U':
+            bead_radius = 7.5
+        case 'T':
+            bead_radius = 15
+        case 'S':
+            bead_radius = 20
+        case 'R':
+            bead_radius = 23.5
+        case _:
+            bead_radius = 23.5 # default to 'R' size if unknown
+    return bead_radius
+
+def _bead_color(bead_name):
+    if bead_name[0] in ['T', 'S', 'R']:
+        bead_type = bead_name[1]
+    else:
+        bead_type = bead_name[0]
+        
+    match bead_type:
+        case 'C':
+            color = '#cccccc' # light gray
+        case 'N':
+            color = '#80b3ff' # blue
+        case 'P':
+            color = '#ff0000' # red
+        case 'X':
+            color = '#ccff00' # lime
+        case 'Q':
+            color = '#ffcc00' # yellow
+        case 'D':
+            color = '#ff8000' # orange
+        case 'U':
+            color = '#8e008e' # purple
+        case _:
+            color = '#808080' # gray
+    return color
+
+def bead_circle(bead_position, name):
+    circle_svg = ['<circle\n']
+    circle_svg += f'style="opacity:0.5;fill:{_bead_color(name)};fill-opacity:1;stroke:#6e6e6e;stroke-width:1.75;stroke-miterlimit:4;stroke-dasharray:none"\n'
+    circle_svg += f'id="circle_bead_{name}"\n'
+    circle_svg += f'cx="{bead_position[0]}"\n'
+    circle_svg += f'cy="{bead_position[1]}"\n'
+    circle_svg += f'r="{_bead_radius(name)}" />\n'
+    return ''.join(circle_svg)
+
+def bead_label(bead_name, bead_position):
+    position = [bead_position[0] + 1/np.sqrt(2) * _bead_radius(bead_name), bead_position[1] - 1/np.sqrt(2) *_bead_radius(bead_name)] 
+    text_svg = f'<text x="{position[0]}" y="{position[1]}" font-size="13" dominant-baseline="bottom" text-anchor="start" fill="#666666">{bead_name}</text>\n'
+    return text_svg
+
+def detect_virtual_edge(resgraph):
+    """
+    Detect virtual edges (nodes only connected by edges with 'order' == 0)
+
+    Parameters
+    resgraph : networkx.Graph
+        The residue graph to analyze.
+
+    Returns
+    dict
+        A dictionary where keys are nodes that are only connected by edges with 'order' == 0,
+        and values are sorted lists of the indices of the nodes they are connected to.
+    """
+    virtual_edges = {}
+    for node in resgraph.nodes:
+        edges = resgraph.edges(node, data=True)
+        # If node has no edges, skip
+        if not list(edges):
+            continue
+        # Check if all edges have 'order' == 0
+        if all(edge_data.get('order', None) == 0 for _, _, edge_data in edges):
+            # save the indices of the edges
+            virtual_edges[node] = sorted([v if u == node else u for u, v, _ in edges])
+    return virtual_edges
+
+def correct_graph_assignment(resgraph):
+    virtual_edges = detect_virtual_edge(resgraph)
+    for node in resgraph.nodes:
+        if node in virtual_edges.keys():
+            for i in range(node, len(resgraph.nodes)-1)[::-1]:
+                # shift graph one position up to compensate the wrong graph assignment done by cgsmiles
+                resgraph.nodes(data=True)[i+1]['graph'] = resgraph.nodes(data=True)[i]['graph']
+            resgraph.nodes(data=True)[node]['graph'] = nx.Graph()
+    return resgraph
+
+def draw_beads(svg, res_graph, full_mol, drawer_coords, add_name=False):
+    # Draw full molecule to get atom coordinates
+    drawer_coords.DrawMolecule(full_mol)
+    drawer_coords.FinishDrawing()  # optional but safe
+
+    correct_graph_assignment(res_graph) # ensure correct mapping if virtual nodes are present
+    virtual_edges = detect_virtual_edge(res_graph)
+
+    bead_positions = {} 
+    for bead, bead_data in res_graph.nodes(data=True):
+        if bead in virtual_edges.keys(): # skip virtual nodes for now, will be added later
+            continue
+
+        bead_name = bead_data['fragname']
+
+        # compute bead position as center of geometry of its atoms
+        coords = []
+        for atoms in bead_data['graph'].nodes:
+            coords.append(drawer_coords.GetDrawCoords(atoms))
+        bead_position = np.mean(coords, axis=0)
+        bead_positions[bead] = bead_position
+        
+        # draw bead as circle and optionally add bead name
+        circle_svg = bead_circle(bead_position, bead_name)
+        svg = svg.replace('</svg>', circle_svg + '</svg>')
+        if add_name: # place bead type top right of bead
+            text_svg = bead_label(bead_name, bead_position)
+            svg = svg.replace('</svg>', text_svg + '</svg>')
+
+    # Now add virtual nodes
+    for virtual_node, connections in virtual_edges.items():
+        bead_name = res_graph.nodes[virtual_node]['fragname']
+
+        # compute bead position as center of geometry of its connected beads
+        coords = []
+        for bead in connections:
+            coords.append(bead_positions[bead])
+        bead_position = np.mean(coords, axis=0)
+        bead_positions[virtual_node] = bead_position  
+        
+        # draw bead as circle and optionally add bead name
+        circle_svg = bead_circle(bead_position, bead_name)
+        svg = svg.replace('</svg>', circle_svg + '</svg>')
+        if add_name: # place bead type top right of bead
+            text_svg = bead_label(bead_name, bead_position)
+            svg = svg.replace('</svg>', text_svg + '</svg>')
+    return svg
+
+def draw_mapping(cgs_string, name=None, remove_hydrogens=True, show_mapping = True, show_bead_labels = False, show_atom_indices=False, color_atoms = False, show_image = True, canvas_size=(300,300)):
+    if not name and not show_image:
+        raise ValueError("Either name must be provided to save the SVG or show_image must be True to display the image.")
+    if not show_mapping and show_bead_labels:
+        print("Warning: show_bead_labels is set to True but show_mapping is False. Bead labels will not be displayed.")
+
+    def setup_drawer():
+        W, H = canvas_size # default 300 x 300
+        minv = Point2D(1000, 1000)
+        maxv = Point2D(-1000, -1000)
+        scalex, scaley = [25, 25] # scale factor for drawing
+        drawer = rdMolDraw2D.MolDraw2DSVG(W, H)
+        drawer.SetScale(scalex, scaley, minv, maxv)
+        return drawer
+
+    # Prepare molecule 
+    res_graph, mol_graph = cgsmiles.MoleculeResolver.from_string(cgs_string).resolve()
+    full_mol = cgsmiles_to_rdkit(mol_graph)
+
+    Chem.rdDepictor.Compute2DCoords(full_mol) # ensure 2D coordinates are present for the full molecule 
+    
+    # bead_positions = get_bead_positions(full_mol, fragment_to_atoms, W, H, scalex, scaley, minv, maxv)
+
+    if remove_hydrogens:
+        mol = Chem.RemoveHs(full_mol, updateExplicitCount=True, sanitize=False) # remove hydrogens for final drawing but keep the coordinated   
+    else:
+        mol = full_mol
+    
+    drawer_final = setup_drawer()
+    drawer_final.drawOptions().addAtomIndices = show_atom_indices
+    drawer_final.drawOptions().bondLineWidth = 1.5
+    if not color_atoms:
+        drawer_final.drawOptions().useBWAtomPalette()
+
+    drawer_final.DrawMolecule(mol)
+    drawer_final.FinishDrawing()
+    svg = drawer_final.GetDrawingText()
+
+    if show_mapping:
+        svg = draw_beads(svg, res_graph, full_mol, setup_drawer(), add_name=show_bead_labels)
+
+    if name:
+        with open(f"{name}.svg", "w") as f:
+            f.write(svg)
+    
+    if show_image:
+        png = cairosvg.svg2png(bytestring=svg.encode("utf-8"))
+        img = Image.open(io.BytesIO(png))
+        plt.imshow(img)
+        plt.axis('off')
+        plt.show()
+
+def draw_mapping_default(cgs_string:str, remove_hydrogens = True, ax=None):
+    _, mol_graph = cgsmiles.MoleculeResolver.from_string(cgs_string).resolve()
+
+    if ax is None:
+        _, ax = plt.subplots(1, 1)
+    if remove_hydrogens:
+        pysmiles.remove_explicit_hydrogens(mol_graph)
+        labels = {}
+        for node in mol_graph.nodes:
+            hcount =  mol_graph.nodes[node].get('hcount', 0)
+            label = mol_graph.nodes[node].get('element', '*')
+            if hcount > 0:
+                label = label + f"H{hcount}"
+            labels[node] = label
+        draw_molecule(mol_graph, ax=ax, labels=labels, scale=1, align_with='x')
+    else:
+        draw_molecule(mol_graph, ax=ax, scale=1)
+    ax.set_frame_on('True')
+    return ax
