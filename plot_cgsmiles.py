@@ -210,7 +210,7 @@ def correct_graph_assignment(resgraph):
             resgraph.nodes(data=True)[node]['graph'] = nx.Graph() # set empty graph for virtual node
     return resgraph
 
-def draw_beads(svg, res_graph, full_mol, drawer_coords, add_name=False):
+def draw_beads(svg, res_graph, full_mol, drawer_coords, include_hydrogens, add_name=False):
     '''
     Draw beads on top of the rdkit molecule SVG.
     Bead positions are calculated as the center of geometry of their constituent atoms.
@@ -226,8 +226,8 @@ def draw_beads(svg, res_graph, full_mol, drawer_coords, add_name=False):
         The full RDKit molecule with all atoms.
     drawer_coords : rdMolDraw2D.MolDraw2DSVG
         An RDKit drawer object used to get atom coordinates.
-    remove_hydrogens : bool
-        Whether hydrogens are to be removed from the bead pposition calculation.
+    include_hydrogens : bool
+        Whether hydrogens are to be included in the bead position calculation.
     add_name : bool, optional
         Whether to add bead names next to the beads, by default False.
     
@@ -252,7 +252,9 @@ def draw_beads(svg, res_graph, full_mol, drawer_coords, add_name=False):
 
         # compute bead position as center of geometry of its atoms
         coords = []
-        for atoms in bead_data['graph'].nodes:
+        for atoms, data in bead_data['graph'].nodes(data=True):
+            if not include_hydrogens and data['element'] == 'H':
+                continue
             coords.append(drawer_coords.GetDrawCoords(atoms))
         bead_position = np.mean(coords, axis=0)
         bead_positions[bead] = bead_position
@@ -283,12 +285,13 @@ def draw_beads(svg, res_graph, full_mol, drawer_coords, add_name=False):
             svg = svg.replace('</svg>', text_svg + '</svg>')
     return svg
 
-def draw_mapping(cgs_string, name=None, remove_hydrogens=True, show_mapping = True, show_bead_labels = False, show_atom_indices=False, color_atoms = False, show_image = True, canvas_size=(300,300)):
+def draw_mapping(cgs_string, name=None, show_hydrogens=False, include_hydrogen_in_bead_position=None, show_mapping = True, show_bead_labels = False, show_atom_indices=False, color_atoms = False, show_image = True, canvas_size=(300,300)):
     if not name and not show_image:
         raise ValueError("Either name must be provided to save the SVG or show_image must be True to display the image.")
     if not show_mapping and show_bead_labels:
         print("Warning: show_bead_labels is set to True but show_mapping is False. Bead labels will not be displayed.")
-
+    if include_hydrogen_in_bead_position is None: # if not explicitly set, use show_hydrogens as indicator
+        include_hydrogen_in_bead_position = show_hydrogens
     def setup_drawer():
         W, H = canvas_size # default 300 x 300
         minv = Point2D(1000, 1000)
@@ -306,7 +309,7 @@ def draw_mapping(cgs_string, name=None, remove_hydrogens=True, show_mapping = Tr
     
     # bead_positions = get_bead_positions(full_mol, fragment_to_atoms, W, H, scalex, scaley, minv, maxv)
 
-    if remove_hydrogens:
+    if not show_hydrogens:
         mol = Chem.RemoveHs(full_mol, updateExplicitCount=True, sanitize=False) # remove hydrogens for final drawing but keep the coordinated   
     else:
         mol = full_mol
@@ -322,7 +325,7 @@ def draw_mapping(cgs_string, name=None, remove_hydrogens=True, show_mapping = Tr
     svg = drawer_final.GetDrawingText()
 
     if show_mapping:
-        svg = draw_beads(svg, res_graph, full_mol, setup_drawer(), remove_hydrogens=remove_hydrogens, add_name=show_bead_labels)
+        svg = draw_beads(svg, res_graph, full_mol, setup_drawer(), include_hydrogen_in_bead_position, add_name=show_bead_labels)
 
     if name:
         with open(f"{name}.svg", "w") as f:
@@ -335,12 +338,12 @@ def draw_mapping(cgs_string, name=None, remove_hydrogens=True, show_mapping = Tr
         plt.axis('off')
         plt.show()
 
-def draw_mapping_default(cgs_string:str, remove_hydrogens = True, ax=None):
+def draw_mapping_default(cgs_string:str, show_hydrogens = False, ax=None):
     _, mol_graph = cgsmiles.MoleculeResolver.from_string(cgs_string).resolve()
 
     if ax is None:
         _, ax = plt.subplots(1, 1)
-    if remove_hydrogens:
+    if not show_hydrogens:
         pysmiles.remove_explicit_hydrogens(mol_graph)
         labels = {}
         for node in mol_graph.nodes:
