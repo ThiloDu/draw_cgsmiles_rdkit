@@ -285,7 +285,45 @@ def draw_beads(svg, res_graph, full_mol, drawer_coords, include_hydrogens, add_n
             svg = svg.replace('</svg>', text_svg + '</svg>')
     return svg
 
-def draw_mapping(cgs_string, name=None, show_hydrogens=False, include_hydrogen_in_bead_position=None, show_mapping = True, show_bead_labels = False, show_atom_indices=False, color_atoms = False, show_image = True, canvas_size=(300,300)):
+def draw_mapping(cgs_string, name=None, show_hydrogens=False, include_hydrogen_in_bead_position=None, show_mapping = True, show_bead_labels = False, show_atom_indices=False, color_atoms = False, show_image = True, canvas_size=(300,300), scale_factor=25):
+    '''
+    Draw a CGSmiles molecule with optional bead mapping overlay using RDKIT.
+    Molecules are not scaled to fit the canvas, in order to keep relative sizes of beads and atoms.
+    For large molecules, increase canvas_size.
+    The bead positions are calculated as the center of geometry of their constituent atoms.
+    Virtual nodes (connected only by edges with 'order' == 0) are placed at the center of geometry of their connected beads.
+
+    Parameters
+    ----------
+    cgs_string : str
+        The CGSmiles string to visualize.
+    name : str, optional
+        The name to save the SVG file as (without extension). If None (default), the SVG is not saved.
+    show_hydrogens : bool, optional, default: False
+        Whether to show hydrogens in the molecule drawing. Default is False.
+    include_hydrogen_in_bead_position : bool, optional, default: None
+        Whether to include hydrogens in the bead position calculation. If None (default), this is set to the value of show_hydrogens.
+    show_mapping : bool, optional, default: True
+        Whether to overlay the bead mapping on the molecule.
+    show_bead_labels : bool, optional, default: False
+        Whether to show bead type labels next to the beads.
+    show_atom_indices : bool, optional, default: False
+        Whether to show atom indices in the molecule drawing.
+    color_atoms : bool, optional, default: False
+        Whether to color atoms by element. Default is False.
+    show_image : bool, optional, default: True
+        Whether to display the image using matplotlib. Default is True.
+    canvas_size : tuple, optional, default: (300, 300)
+        The size of the drawing canvas in pixels. Default is (300, 300).
+    scale_factor : int, optional, default: 25
+        The scale factor for drawing. Higher values result in larger drawings. Default is 25.
+
+    Returns
+    -------
+    None
+    '''
+    
+    
     if not name and not show_image:
         raise ValueError("Either name must be provided to save the SVG or show_image must be True to display the image.")
     if not show_mapping and show_bead_labels:
@@ -296,7 +334,7 @@ def draw_mapping(cgs_string, name=None, show_hydrogens=False, include_hydrogen_i
         W, H = canvas_size # default 300 x 300
         minv = Point2D(1000, 1000)
         maxv = Point2D(-1000, -1000)
-        scalex, scaley = [25, 25] # scale factor for drawing
+        scalex, scaley = [scale_factor, scale_factor] # scale factor for drawing
         drawer = rdMolDraw2D.MolDraw2DSVG(W, H)
         drawer.SetScale(scalex, scaley, minv, maxv)
         return drawer
@@ -339,6 +377,23 @@ def draw_mapping(cgs_string, name=None, show_hydrogens=False, include_hydrogen_i
         plt.show()
 
 def draw_mapping_default(cgs_string:str, show_hydrogens = False, ax=None):
+    '''
+    Draw a CGSmiles molecule with default settings using matplotlib.
+
+    Parameters
+    ----------
+    cgs_string : str
+        The CGSmiles string to visualize.
+    show_hydrogens : bool, optional, default: False
+        Whether to show hydrogens in the molecule drawing. Default is False.
+    ax : matplotlib.axes.Axes, optional
+        The matplotlib axes to draw on. If None (default), a new figure and axes are created.
+
+    Returns
+    -------
+    matplotlib.axes.Axes
+        The axes with the drawn molecule.
+    '''
     _, mol_graph = cgsmiles.MoleculeResolver.from_string(cgs_string).resolve()
 
     if ax is None:
