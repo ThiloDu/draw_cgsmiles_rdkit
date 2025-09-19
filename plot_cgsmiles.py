@@ -50,6 +50,25 @@ def cgsmiles_to_rdkit(mol_graph):
         else:  
             raise ValueError(f"Unsupported bond order: {data['order']}") 
         mol.AddBond(i,j, bond_order)
+
+    # add isomerism information if present
+    isomer_data = [d[0] for d in nx.get_node_attributes(mol_graph, 'ez_isomer').values() if d is not None]
+
+    for isomer in isomer_data:  
+        if isomer[1] > isomer[2]:
+            continue
+        bond = mol.GetBondBetweenAtoms(isomer[1], isomer[2])
+        if not bond.GetBondType() == Chem.rdchem.BondType.DOUBLE:
+            print(f'WARNING: Isomerisation defined on non-double bond! (atoms {isomer[1]}-{isomer[2]})')
+            print('    Check your CGSMILES string!')
+            continue
+        bond.SetStereoAtoms(isomer[0], isomer[3])
+        if isomer[4] == 'cis':
+            bond.SetStereo(Chem.rdchem.BondStereo.STEREOZ)  # cis
+        elif isomer[4] == 'trans':
+            bond.SetStereo(Chem.rdchem.BondStereo.STEREOE)
+        else:
+            raise ValueError(f"Unsupported isomer type: {isomer[4]}")
     return mol
 
 def _bead_radius(bead_type):
