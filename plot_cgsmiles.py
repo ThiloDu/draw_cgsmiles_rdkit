@@ -232,7 +232,6 @@ def _create_bead_label(bead_position, bead_type, bead_name=None, type_color='#66
     text_svg += f'\ty="{position[1]}">\n'
 
     if bead_type == 'U' and bead_name is not None: # only show bead name in black
-        print('yeah')
         type_color = '#000000' # use black color for virtual nodes
         bead_type = bead_name
     
