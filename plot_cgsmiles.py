@@ -33,7 +33,9 @@ def cgsmiles_to_rdkit(mol_graph):
     mol = Chem.RWMol()
 
     for _, data in sorted(mol_graph.nodes(data=True)):
-        mol.AddAtom(Chem.Atom(data['element']))
+        atom = Chem.Atom(data['element'])
+        atom.SetFormalCharge(data['charge'])
+        mol.AddAtom(atom)
 
     for i, j, data in mol_graph.edges(data=True):
         if data['order']==1:
