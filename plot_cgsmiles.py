@@ -15,10 +15,11 @@ from rdkit.Geometry.rdGeometry import Point2D
 from rdkit.Chem import rdDepictor,rdMolTransforms
 
 
-def cgsmiles_to_rdkit(mol_graph):
+def cgsmiles_to_rdkit(mol_graph, add_hydrogens=False):
     '''
     Convert a CGSmiles molecule graph to an RDKit molecule. 
     Automatically detects bond orders and aromaticity.
+    Hydrogens will be skipped and restored later if needed.
 
     Parameters
     ----------
@@ -32,12 +33,20 @@ def cgsmiles_to_rdkit(mol_graph):
     '''
     mol = Chem.RWMol()
 
-    for _, data in sorted(mol_graph.nodes(data=True)):
+    node_to_rdkit_idx = {}
+    for node_idx, data in sorted(mol_graph.nodes(data=True)):
+        if not add_hydrogens and data['element'] == 'H' :
+            continue 
         atom = Chem.Atom(data['element'])
         atom.SetFormalCharge(data['charge'])
-        mol.AddAtom(atom)
+        rdkit_idx = mol.AddAtom(atom)
+        node_to_rdkit_idx[node_idx] = rdkit_idx
 
     for i, j, data in mol_graph.edges(data=True):
+        if not add_hydrogens and (mol_graph.nodes[i]['element'] == 'H' or mol_graph.nodes[j]['element'] == 'H'):
+            continue  
+        i = node_to_rdkit_idx[i]
+        j = node_to_rdkit_idx[j]
         if data['order']==1:
             bond_order = Chem.rdchem.BondType.SINGLE
         elif data['order']==2:
@@ -68,7 +77,7 @@ def cgsmiles_to_rdkit(mol_graph):
             bond.SetStereo(Chem.rdchem.BondStereo.STEREOE)
         else:
             raise ValueError(f"Unsupported isomer type: {isomer[4]}")
-    return mol
+    return mol, node_to_rdkit_idx
 
 def _rotate_molecule_around_center(mol, theta):
     """
@@ -323,7 +332,7 @@ def correct_graph_assignment(resgraph):
             resgraph.nodes(data=True)[node]['graph'] = nx.Graph() # set empty graph for virtual node
     return resgraph
 
-def draw_beads(svg, res_graph, full_mol, drawer_coords, include_hydrogens, show_vs, add_names, show_node_indicators):
+def draw_beads(svg, res_graph, full_mol, drawer_coords, cgs_to_mol_idx, include_hydrogens, show_vs, add_names, show_node_indicators):
     '''
     Draw beads on top of the rdkit molecule SVG.
     Bead positions are calculated as the center of geometry of their constituent atoms.
@@ -370,10 +379,11 @@ def draw_beads(svg, res_graph, full_mol, drawer_coords, include_hydrogens, show_
 
         # compute bead position as center of geometry of its atoms
         coords = []
-        for atoms, data in bead_data['graph'].nodes(data=True):
+        for atom, data in bead_data['graph'].nodes(data=True):
             if not include_hydrogens and data['element'] == 'H':
                 continue
-            coords.append(drawer_coords.GetDrawCoords(atoms))
+            atom = cgs_to_mol_idx[atom]
+            coords.append(drawer_coords.GetDrawCoords(atom))
         bead_position = np.mean(coords, axis=0)
         bead_positions[bead] = bead_position
         
@@ -472,16 +482,11 @@ def draw_mapping(cgs_string, name=None, show_hydrogens=False, include_hydrogen_i
 
     # Prepare molecule 
     res_graph, mol_graph = cgsmiles.MoleculeResolver.from_string(cgs_string).resolve()
-    full_mol = cgsmiles_to_rdkit(mol_graph)
-    rdDepictor.Compute2DCoords(full_mol) # ensure 2D coordinates are present for the full molecule 
+    mol, cgs_to_mol_idx = cgsmiles_to_rdkit(mol_graph, add_hydrogens=show_hydrogens)
+    rdDepictor.Compute2DCoords(mol) # ensure 2D coordinates are present for the full molecule 
     if flip:
-        _flip_molecule(full_mol)
-    _rotate_molecule_around_center(full_mol, rotate_by)
-
-    if not show_hydrogens:
-        mol = Chem.RemoveHs(full_mol, updateExplicitCount=True, sanitize=False) # remove hydrogens for final drawing but keep the original coordinates  
-    else:
-        mol = full_mol
+        _flip_molecule(mol)
+    _rotate_molecule_around_center(mol, rotate_by)    
 
     # Prepare drawer for final drawing
     drawer_final = setup_drawer()
@@ -494,7 +499,7 @@ def draw_mapping(cgs_string, name=None, show_hydrogens=False, include_hydrogen_i
     svg = drawer_final.GetDrawingText()
 
     if show_mapping:
-        svg = draw_beads(svg, res_graph, full_mol, setup_drawer(), include_hydrogen_in_bead_position, show_vs, show_bead_labels, show_node_indicators)
+        svg = draw_beads(svg, res_graph, mol, setup_drawer(), cgs_to_mol_idx, include_hydrogen_in_bead_position, show_vs, show_bead_labels, show_node_indicators)
 
     if name: # save SVG if name is given
         with open(f"{name}.svg", "w") as f:
