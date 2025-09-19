@@ -148,14 +148,14 @@ def _create_bead_circle(bead_position, name):
         The SVG circle element as a string.
     '''
     circle_svg = ['<circle\n']
-    circle_svg += f'style="opacity:0.5;fill:{_bead_color(name)};fill-opacity:1;stroke:#6e6e6e;stroke-width:1.75;stroke-miterlimit:4;stroke-dasharray:none"\n'
-    circle_svg += f'id="circle_bead_{name}"\n'
-    circle_svg += f'cx="{bead_position[0]}"\n'
-    circle_svg += f'cy="{bead_position[1]}"\n'
-    circle_svg += f'r="{_bead_radius(name)}" />\n'
+    circle_svg += f'\tstyle="opacity:0.5;fill:{_bead_color(name)};fill-opacity:1;stroke:#6e6e6e;stroke-width:1.75;stroke-miterlimit:4;stroke-dasharray:none"\n'
+    circle_svg += f'\tid="circle_bead_{name}"\n'
+    circle_svg += f'\tcx="{bead_position[0]}"\n'
+    circle_svg += f'\tcy="{bead_position[1]}"\n'
+    circle_svg += f'\tr="{_bead_radius(name)}" />\n'
     return ''.join(circle_svg)
 
-def _create_bead_label(bead_type, bead_position):
+def _create_bead_label(bead_position, bead_type, type_color='#666666', bead_name=None, name_color='#000000'):
     '''
     Create SVG text element for a bead label.
 
@@ -171,9 +171,20 @@ def _create_bead_label(bead_type, bead_position):
     str
         The SVG text element as a string.
     '''
+    fontsize = 13
     position = [bead_position[0] + 1/np.sqrt(2) * _bead_radius(bead_type), bead_position[1] - 1/np.sqrt(2) *_bead_radius(bead_type)] 
-    text_svg = f'<text x="{position[0]}" y="{position[1]}" font-size="13" dominant-baseline="bottom" text-anchor="start" fill="#666666">{bead_type}</text>\n'
-    return text_svg
+
+    text_svg = ['<text\n']
+    text_svg += f'\tid="text_bead_{bead_type}"\n'
+    text_svg += f'\tstyle="font-size:{fontsize}px;dominant-baseline:bottom;text-anchor:start;font-family:sans-serif;"\n'
+    text_svg += f'\tx="{position[0]}"\n'
+    text_svg += f'\ty="{position[1]}">\n'
+
+    if bead_name is not None:
+        text_svg += f'\t<tspan x="{position[0]}" y="{position[1]+{fontsize}}" font-size="{fontsize}px" fill="{name_color} font-family="sans-serif"">{bead_name}</tspan>\n'
+    text_svg += f'\t<tspan x="{position[0]}" y="{position[1]}" font-size="{fontsize}px" fill="{type_color}" font-family="sans-serif">{bead_type}</tspan>\n'
+    text_svg += '</text>\n'
+    return ''.join(text_svg)
 
 def detect_virtual_nodes(resgraph):
     """
@@ -285,7 +296,7 @@ def draw_beads(svg, res_graph, full_mol, drawer_coords, include_hydrogens, show_
         if add_names: # place bead type top right of bead
             if not show_node_indicators: # remove trailing capital letter from bead type if present
                 bead_type = bead_type[:-1] if bead_type[-1].isupper() and len(bead_type) > 1 else bead_type
-            text_svg = _create_bead_label(bead_type, bead_position)
+            text_svg = _create_bead_label(bead_position, bead_type)
             svg = svg.replace('</svg>', text_svg + '</svg>')
 
     if show_vs: # add virtual nodes if requested
@@ -303,7 +314,7 @@ def draw_beads(svg, res_graph, full_mol, drawer_coords, include_hydrogens, show_
             circle_svg = _create_bead_circle(bead_position, bead_type)
             svg = svg.replace('</svg>', circle_svg + '</svg>')
             if add_names: # place bead type top right of bead
-                text_svg = _create_bead_label(bead_type, bead_position)
+                text_svg = _create_bead_label(bead_position, bead_type, type_color='#000000') # use black color for virtual nodes
                 svg = svg.replace('</svg>', text_svg + '</svg>')
     return svg
 
