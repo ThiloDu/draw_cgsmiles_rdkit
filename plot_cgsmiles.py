@@ -1,8 +1,3 @@
-# ideas:
-# - dont use hydrogens for bead position calculation
-# - remove last capital letter 
-
-
 import cgsmiles
 from cgsmiles.drawing import draw_molecule
 import pysmiles
@@ -17,6 +12,8 @@ import networkx as nx
 from rdkit import Chem
 from rdkit.Chem.Draw import rdMolDraw2D
 from rdkit.Geometry.rdGeometry import Point2D
+from rdkit.Chem import rdDepictor,rdMolTransforms
+
 
 def cgsmiles_to_rdkit(mol_graph):
     '''
@@ -229,7 +226,7 @@ def correct_graph_assignment(resgraph):
             resgraph.nodes(data=True)[node]['graph'] = nx.Graph() # set empty graph for virtual node
     return resgraph
 
-def draw_beads(svg, res_graph, full_mol, drawer_coords, include_hydrogens, add_name=False):
+def draw_beads(svg, res_graph, full_mol, drawer_coords, include_hydrogens, add_names=False, remove_node_indicators=True):
     '''
     Draw beads on top of the rdkit molecule SVG.
     Bead positions are calculated as the center of geometry of their constituent atoms.
@@ -281,7 +278,9 @@ def draw_beads(svg, res_graph, full_mol, drawer_coords, include_hydrogens, add_n
         # draw bead as circle and optionally add bead name
         circle_svg = _create_bead_circle(bead_position, bead_type)
         svg = svg.replace('</svg>', circle_svg + '</svg>')
-        if add_name: # place bead type top right of bead
+        if add_names: # place bead type top right of bead
+            if remove_node_indicators: # remove trailing capital letter from bead type if present
+                bead_type = bead_type[:-1] if bead_type[-1].isupper() and len(bead_type) > 1 else bead_type
             text_svg = _create_bead_label(bead_type, bead_position)
             svg = svg.replace('</svg>', text_svg + '</svg>')
 
@@ -299,18 +298,67 @@ def draw_beads(svg, res_graph, full_mol, drawer_coords, include_hydrogens, add_n
         # draw bead as circle and optionally add bead name
         circle_svg = _create_bead_circle(bead_position, bead_type)
         svg = svg.replace('</svg>', circle_svg + '</svg>')
-        if add_name: # place bead type top right of bead
+        if add_names: # place bead type top right of bead
             text_svg = _create_bead_label(bead_type, bead_position)
             svg = svg.replace('</svg>', text_svg + '</svg>')
     return svg
 
-def draw_mapping(cgs_string, name=None, show_hydrogens=False, include_hydrogen_in_bead_position=None, show_mapping = True, show_bead_labels = False, show_atom_indices=False, color_atoms = False, show_image = True, canvas_size=(300,300), scale_factor=25):
+def _rotate_molecule_around_center(mol, theta):
+    """
+    Rotate a molecule in the XY plane around its centroid.
+    
+    Parameters
+    ----------
+    mol : rdkit.Chem.rdchem.Mol
+        The RDKit molecule to rotate. Must have 3D conformer.
+    theta : float
+        The rotation angle in degrees.
+
+    Returns
+    -------
+    None
+        The molecule is modified in place.
+    """
+    conf = mol.GetConformer(0)
+
+    coords = np.array([list(conf.GetAtomPosition(i)) for i in range(mol.GetNumAtoms())])
+    centroid = coords.mean(axis=0)
+
+    # translation to origin
+    T1 = np.eye(4)
+    T1[:3, 3] = -centroid
+
+    # rotation in xy plane around origin 
+    theta = np.deg2rad(theta)
+    c, s = np.cos(theta), np.sin(theta)
+    R = np.array([
+        [c,  s, 0, 0],
+        [-s, c, 0, 0],
+        [0,  0, 1, 0],
+        [0,  0, 0, 1]
+    ])
+
+    # translate centroid back to original position
+    T2 = np.eye(4)
+    T2[:3, 3] = centroid
+
+    # Full transform = T2 * R * T1
+    M = T2 @ R @ T1
+
+    rdMolTransforms.TransformConformer(conf, M)
+
+def draw_mapping(cgs_string, name=None, show_hydrogens=False, include_hydrogen_in_bead_position=None, show_mapping=True, show_bead_labels=False, show_atom_indices=False, color_atoms=False, show_image=True, rotate_by=0, canvas_size=(300,300), scale_factor=25):
     '''
     Draw a CGSmiles molecule with optional bead mapping overlay using RDKIT.
     Molecules are not scaled to fit the canvas, in order to keep relative sizes of beads and atoms.
-    For large molecules, increase canvas_size.
+    For large molecules, increase canvas_size or change scale factor.
     The bead positions are calculated as the center of geometry of their constituent atoms.
     Virtual nodes (connected only by edges with 'order' == 0) are placed at the center of geometry of their connected beads.
+
+    Example usage:
+    ```
+    draw_mapping('{[#TC5]1.2[#TC5].3[#TC5]1.([#U]23)}.{#TC5=[$]cc[$][>]}', 'benzene')
+    ```
 
     Parameters
     ----------
@@ -329,19 +377,20 @@ def draw_mapping(cgs_string, name=None, show_hydrogens=False, include_hydrogen_i
     show_atom_indices : bool, optional, default: False
         Whether to show atom indices in the molecule drawing.
     color_atoms : bool, optional, default: False
-        Whether to color atoms by element. Default is False.
+        Whether to color atoms by element. 
     show_image : bool, optional, default: True
-        Whether to display the image using matplotlib. Default is True.
+        Whether to display the image using matplotlib.
+    rotate_by : float, optional, default: 0
+        Rotate the molecule by this angle (in degrees) in the XY plane around its centroi
     canvas_size : tuple, optional, default: (300, 300)
-        The size of the drawing canvas in pixels. Default is (300, 300).
+        The size of the drawing canvas in pixels. 
     scale_factor : int, optional, default: 25
-        The scale factor for drawing. Higher values result in larger drawings. Default is 25.
+        The scale factor for drawing. Higher values result in larger drawings. 
 
     Returns
     -------
     None
     '''
-    
     
     if not name and not show_image:
         raise ValueError("Either name must be provided to save the SVG or show_image must be True to display the image.")
@@ -361,34 +410,32 @@ def draw_mapping(cgs_string, name=None, show_hydrogens=False, include_hydrogen_i
     # Prepare molecule 
     res_graph, mol_graph = cgsmiles.MoleculeResolver.from_string(cgs_string).resolve()
     full_mol = cgsmiles_to_rdkit(mol_graph)
-
-    Chem.rdDepictor.Compute2DCoords(full_mol) # ensure 2D coordinates are present for the full molecule 
-    
-    # bead_positions = get_bead_positions(full_mol, fragment_to_atoms, W, H, scalex, scaley, minv, maxv)
+    rdDepictor.Compute2DCoords(full_mol) # ensure 2D coordinates are present for the full molecule 
+    _rotate_molecule_around_center(full_mol, rotate_by)
 
     if not show_hydrogens:
-        mol = Chem.RemoveHs(full_mol, updateExplicitCount=True, sanitize=False) # remove hydrogens for final drawing but keep the coordinated   
+        mol = Chem.RemoveHs(full_mol, updateExplicitCount=True, sanitize=False) # remove hydrogens for final drawing but keep the original coordinates  
     else:
         mol = full_mol
-    
+
+    # Prepare drawer for final drawing
     drawer_final = setup_drawer()
     drawer_final.drawOptions().addAtomIndices = show_atom_indices
     drawer_final.drawOptions().bondLineWidth = 1.5
-    if not color_atoms:
+    if not color_atoms: # disable coloring by element
         drawer_final.drawOptions().useBWAtomPalette()
-
     drawer_final.DrawMolecule(mol)
     drawer_final.FinishDrawing()
     svg = drawer_final.GetDrawingText()
 
     if show_mapping:
-        svg = draw_beads(svg, res_graph, full_mol, setup_drawer(), include_hydrogen_in_bead_position, add_name=show_bead_labels)
+        svg = draw_beads(svg, res_graph, full_mol, setup_drawer(), include_hydrogen_in_bead_position, add_names=show_bead_labels)
 
-    if name:
+    if name: # save SVG if name is given
         with open(f"{name}.svg", "w") as f:
             f.write(svg)
     
-    if show_image:
+    if show_image: # display image using matplotlib
         png = cairosvg.svg2png(bytestring=svg.encode("utf-8"))
         img = Image.open(io.BytesIO(png))
         plt.imshow(img)
