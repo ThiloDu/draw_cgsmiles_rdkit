@@ -68,6 +68,50 @@ def cgsmiles_to_rdkit(mol_graph):
             raise ValueError(f"Unsupported isomer type: {isomer[4]}")
     return mol
 
+def _rotate_molecule_around_center(mol, theta):
+    """
+    Rotate a molecule in the XY plane around its centroid.
+    
+    Parameters
+    ----------
+    mol : rdkit.Chem.rdchem.Mol
+        The RDKit molecule to rotate. Must have 3D conformer.
+    theta : float
+        The rotation angle in degrees.
+
+    Returns
+    -------
+    None
+        The molecule is modified in place.
+    """
+    conf = mol.GetConformer(0)
+
+    coords = np.array([list(conf.GetAtomPosition(i)) for i in range(mol.GetNumAtoms())])
+    centroid = coords.mean(axis=0)
+
+    # translation to origin
+    T1 = np.eye(4)
+    T1[:3, 3] = -centroid
+
+    # rotation in xy plane around origin 
+    theta = np.deg2rad(theta)
+    c, s = np.cos(theta), np.sin(theta)
+    R = np.array([
+        [c,  s, 0, 0],
+        [-s, c, 0, 0],
+        [0,  0, 1, 0],
+        [0,  0, 0, 1]
+    ])
+
+    # translate centroid back to original position
+    T2 = np.eye(4)
+    T2[:3, 3] = centroid
+
+    # Full transform = T2 * R * T1
+    M = T2 @ R @ T1
+
+    rdMolTransforms.TransformConformer(conf, M)
+
 def _bead_radius(bead_type):
     '''
     Determine radius for the bead circle based on bead size given in the bead type.
@@ -155,16 +199,22 @@ def _create_bead_circle(bead_position, name):
     circle_svg += f'\tr="{_bead_radius(name)}" />\n'
     return ''.join(circle_svg)
 
-def _create_bead_label(bead_position, bead_type, type_color='#666666', bead_name=None, name_color='#000000'):
+def _create_bead_label(bead_position, bead_type, bead_name=None, type_color='#666666', name_color='#000000'):
     '''
     Create SVG text element for a bead label.
 
     Parameters
     ----------
+    bead_position : list or np.array
+        The (x, y) position of the center of the bead.
     bead_type : str
         The bead type/name.
-    bead_position : list or np.array
-        The (x, y) position of the bead.
+    bead_name : str, optional, default: None
+        The bead name to display above the bead type. If None, only the bead type is shown.
+    type_color : str, optional, default: '#666666'
+        The color of the bead type text in hex format.
+    name_color : str, optional, default: '#000000'
+        The color of the bead name text in hex format.   
     
     Returns
     -------
@@ -174,14 +224,22 @@ def _create_bead_label(bead_position, bead_type, type_color='#666666', bead_name
     fontsize = 13
     position = [bead_position[0] + 1/np.sqrt(2) * _bead_radius(bead_type), bead_position[1] - 1/np.sqrt(2) *_bead_radius(bead_type)] 
 
+    # define text element
     text_svg = ['<text\n']
     text_svg += f'\tid="text_bead_{bead_type}"\n'
     text_svg += f'\tstyle="font-size:{fontsize}px;dominant-baseline:bottom;text-anchor:start;font-family:sans-serif;"\n'
     text_svg += f'\tx="{position[0]}"\n'
     text_svg += f'\ty="{position[1]}">\n'
 
-    if bead_name is not None:
-        text_svg += f'\t<tspan x="{position[0]}" y="{position[1]+{fontsize}}" font-size="{fontsize}px" fill="{name_color} font-family="sans-serif"">{bead_name}</tspan>\n'
+    if bead_type == 'U' and bead_name is not None: # only show bead name in black
+        print('yeah')
+        type_color = '#000000' # use black color for virtual nodes
+        bead_type = bead_name
+    
+    # define tspan element for bead name if given
+    elif bead_name is not None:
+        text_svg += f'\t<tspan x="{position[0]}" y="{position[1]-fontsize}" font-size="{fontsize}px" fill="{name_color}" font-family="sans-serif">{bead_name}</tspan>\n'
+    # define tspan element for bead type
     text_svg += f'\t<tspan x="{position[0]}" y="{position[1]}" font-size="{fontsize}px" fill="{type_color}" font-family="sans-serif">{bead_type}</tspan>\n'
     text_svg += '</text>\n'
     return ''.join(text_svg)
@@ -280,6 +338,7 @@ def draw_beads(svg, res_graph, full_mol, drawer_coords, include_hydrogens, show_
             continue
 
         bead_type = bead_data['fragname']
+        bead_name = bead_data.get('n', None)
 
         # compute bead position as center of geometry of its atoms
         coords = []
@@ -296,13 +355,13 @@ def draw_beads(svg, res_graph, full_mol, drawer_coords, include_hydrogens, show_
         if add_names: # place bead type top right of bead
             if not show_node_indicators: # remove trailing capital letter from bead type if present
                 bead_type = bead_type[:-1] if bead_type[-1].isupper() and len(bead_type) > 1 else bead_type
-            text_svg = _create_bead_label(bead_position, bead_type)
+            text_svg = _create_bead_label(bead_position, bead_type, bead_name)
             svg = svg.replace('</svg>', text_svg + '</svg>')
 
     if show_vs: # add virtual nodes if requested
         for virtual_node, connections in virtual_edges.items():
             bead_type = res_graph.nodes[virtual_node]['fragname']
-
+            bead_name = res_graph.nodes[virtual_node].get('n', None)
             # compute bead position as center of geometry of its connected beads
             coords = []
             for bead in connections:
@@ -314,53 +373,9 @@ def draw_beads(svg, res_graph, full_mol, drawer_coords, include_hydrogens, show_
             circle_svg = _create_bead_circle(bead_position, bead_type)
             svg = svg.replace('</svg>', circle_svg + '</svg>')
             if add_names: # place bead type top right of bead
-                text_svg = _create_bead_label(bead_position, bead_type, type_color='#000000') # use black color for virtual nodes
+                text_svg = _create_bead_label(bead_position, bead_type, bead_name) # use black color for virtual nodes
                 svg = svg.replace('</svg>', text_svg + '</svg>')
     return svg
-
-def _rotate_molecule_around_center(mol, theta):
-    """
-    Rotate a molecule in the XY plane around its centroid.
-    
-    Parameters
-    ----------
-    mol : rdkit.Chem.rdchem.Mol
-        The RDKit molecule to rotate. Must have 3D conformer.
-    theta : float
-        The rotation angle in degrees.
-
-    Returns
-    -------
-    None
-        The molecule is modified in place.
-    """
-    conf = mol.GetConformer(0)
-
-    coords = np.array([list(conf.GetAtomPosition(i)) for i in range(mol.GetNumAtoms())])
-    centroid = coords.mean(axis=0)
-
-    # translation to origin
-    T1 = np.eye(4)
-    T1[:3, 3] = -centroid
-
-    # rotation in xy plane around origin 
-    theta = np.deg2rad(theta)
-    c, s = np.cos(theta), np.sin(theta)
-    R = np.array([
-        [c,  s, 0, 0],
-        [-s, c, 0, 0],
-        [0,  0, 1, 0],
-        [0,  0, 0, 1]
-    ])
-
-    # translate centroid back to original position
-    T2 = np.eye(4)
-    T2[:3, 3] = centroid
-
-    # Full transform = T2 * R * T1
-    M = T2 @ R @ T1
-
-    rdMolTransforms.TransformConformer(conf, M)
 
 def draw_mapping(cgs_string, name=None, show_hydrogens=False, include_hydrogen_in_bead_position=None, show_mapping=True, show_bead_labels=False, show_vs=True, show_atom_indices=False, color_atoms=False, show_image=True, show_node_indicators=False, rotate_by=0, canvas_size=(300,300), scale_factor=25):
     '''
@@ -369,6 +384,7 @@ def draw_mapping(cgs_string, name=None, show_hydrogens=False, include_hydrogen_i
     For large molecules, increase canvas_size or change scale factor.
     The bead positions are calculated as the center of geometry of their constituent atoms.
     Virtual nodes (connected only by edges with 'order' == 0) are placed at the center of geometry of their connected beads.
+    Bead names are added as labels. They can be added via a 'n' annotation in the CGSmiles string.
 
     Example usage:
     ```
