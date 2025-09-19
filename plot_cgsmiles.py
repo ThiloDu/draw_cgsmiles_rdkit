@@ -226,7 +226,7 @@ def correct_graph_assignment(resgraph):
             resgraph.nodes(data=True)[node]['graph'] = nx.Graph() # set empty graph for virtual node
     return resgraph
 
-def draw_beads(svg, res_graph, full_mol, drawer_coords, include_hydrogens, add_names=False, remove_node_indicators=True):
+def draw_beads(svg, res_graph, full_mol, drawer_coords, include_hydrogens, show_vs, add_names, show_node_indicators):
     '''
     Draw beads on top of the rdkit molecule SVG.
     Bead positions are calculated as the center of geometry of their constituent atoms.
@@ -239,14 +239,18 @@ def draw_beads(svg, res_graph, full_mol, drawer_coords, include_hydrogens, add_n
     res_graph : networkx.Graph
         The residue graph containing bead information.
     full_mol : rdkit.Chem.rdchem.Mol
-        The full RDKit molecule with all atoms.
+        The full RDKit molecule with all atoms including hydrogens.
     drawer_coords : rdMolDraw2D.MolDraw2DSVG
         An RDKit drawer object used to get atom coordinates.
     include_hydrogens : bool
         Whether hydrogens are to be included in the bead position calculation.
+    show_vs : bool
+        Whether to show virtual nodes.
     add_name : bool, optional
         Whether to add bead names next to the beads, by default False.
-    
+    show_node_indicators : bool, optional
+        Whether to show trailing capital letter from bead type if present.
+
     Returns
     -------
     str
@@ -279,28 +283,28 @@ def draw_beads(svg, res_graph, full_mol, drawer_coords, include_hydrogens, add_n
         circle_svg = _create_bead_circle(bead_position, bead_type)
         svg = svg.replace('</svg>', circle_svg + '</svg>')
         if add_names: # place bead type top right of bead
-            if remove_node_indicators: # remove trailing capital letter from bead type if present
+            if not show_node_indicators: # remove trailing capital letter from bead type if present
                 bead_type = bead_type[:-1] if bead_type[-1].isupper() and len(bead_type) > 1 else bead_type
             text_svg = _create_bead_label(bead_type, bead_position)
             svg = svg.replace('</svg>', text_svg + '</svg>')
 
-    # Now add virtual nodes
-    for virtual_node, connections in virtual_edges.items():
-        bead_type = res_graph.nodes[virtual_node]['fragname']
+    if show_vs: # add virtual nodes if requested
+        for virtual_node, connections in virtual_edges.items():
+            bead_type = res_graph.nodes[virtual_node]['fragname']
 
-        # compute bead position as center of geometry of its connected beads
-        coords = []
-        for bead in connections:
-            coords.append(bead_positions[bead])
-        bead_position = np.mean(coords, axis=0)
-        bead_positions[virtual_node] = bead_position  
-        
-        # draw bead as circle and optionally add bead name
-        circle_svg = _create_bead_circle(bead_position, bead_type)
-        svg = svg.replace('</svg>', circle_svg + '</svg>')
-        if add_names: # place bead type top right of bead
-            text_svg = _create_bead_label(bead_type, bead_position)
-            svg = svg.replace('</svg>', text_svg + '</svg>')
+            # compute bead position as center of geometry of its connected beads
+            coords = []
+            for bead in connections:
+                coords.append(bead_positions[bead])
+            bead_position = np.mean(coords, axis=0)
+            bead_positions[virtual_node] = bead_position  
+            
+            # draw bead as circle and optionally add bead name
+            circle_svg = _create_bead_circle(bead_position, bead_type)
+            svg = svg.replace('</svg>', circle_svg + '</svg>')
+            if add_names: # place bead type top right of bead
+                text_svg = _create_bead_label(bead_type, bead_position)
+                svg = svg.replace('</svg>', text_svg + '</svg>')
     return svg
 
 def _rotate_molecule_around_center(mol, theta):
@@ -347,7 +351,7 @@ def _rotate_molecule_around_center(mol, theta):
 
     rdMolTransforms.TransformConformer(conf, M)
 
-def draw_mapping(cgs_string, name=None, show_hydrogens=False, include_hydrogen_in_bead_position=None, show_mapping=True, show_bead_labels=False, show_atom_indices=False, color_atoms=False, show_image=True, rotate_by=0, canvas_size=(300,300), scale_factor=25):
+def draw_mapping(cgs_string, name=None, show_hydrogens=False, include_hydrogen_in_bead_position=None, show_mapping=True, show_bead_labels=False, show_vs=False, show_atom_indices=False, color_atoms=False, show_image=True, show_node_indicators=False, rotate_by=0, canvas_size=(300,300), scale_factor=25):
     '''
     Draw a CGSmiles molecule with optional bead mapping overlay using RDKIT.
     Molecules are not scaled to fit the canvas, in order to keep relative sizes of beads and atoms.
@@ -380,6 +384,8 @@ def draw_mapping(cgs_string, name=None, show_hydrogens=False, include_hydrogen_i
         Whether to color atoms by element. 
     show_image : bool, optional, default: True
         Whether to display the image using matplotlib.
+    show_node_indicators : bool, optional, default: False
+        Whether to show trailing capital letter from bead type if present. Used to differenciate different mappings of the same bead type.
     rotate_by : float, optional, default: 0
         Rotate the molecule by this angle (in degrees) in the XY plane around its centroi
     canvas_size : tuple, optional, default: (300, 300)
@@ -429,7 +435,7 @@ def draw_mapping(cgs_string, name=None, show_hydrogens=False, include_hydrogen_i
     svg = drawer_final.GetDrawingText()
 
     if show_mapping:
-        svg = draw_beads(svg, res_graph, full_mol, setup_drawer(), include_hydrogen_in_bead_position, add_names=show_bead_labels)
+        svg = draw_beads(svg, res_graph, full_mol, setup_drawer(), include_hydrogen_in_bead_position, show_vs, show_bead_labels, show_node_indicators)
 
     if name: # save SVG if name is given
         with open(f"{name}.svg", "w") as f:
