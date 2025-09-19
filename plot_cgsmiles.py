@@ -472,9 +472,9 @@ def draw_mapping(cgs_string, name=None, show_hydrogens=False, include_hydrogen_i
     res_graph, mol_graph = cgsmiles.MoleculeResolver.from_string(cgs_string).resolve()
     full_mol = cgsmiles_to_rdkit(mol_graph)
     rdDepictor.Compute2DCoords(full_mol) # ensure 2D coordinates are present for the full molecule 
-    _rotate_molecule_around_center(full_mol, rotate_by)
     if flip:
         _flip_molecule(full_mol)
+    _rotate_molecule_around_center(full_mol, rotate_by)
 
     if not show_hydrogens:
         mol = Chem.RemoveHs(full_mol, updateExplicitCount=True, sanitize=False) # remove hydrogens for final drawing but keep the original coordinates  
