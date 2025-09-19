@@ -112,6 +112,33 @@ def _rotate_molecule_around_center(mol, theta):
 
     rdMolTransforms.TransformConformer(conf, M)
 
+def _flip_molecule(mol):
+    """
+    Flip a molecule horizontally in the XY plane around its centroid.
+    
+    Parameters
+    ----------
+    mol : rdkit.Chem.rdchem.Mol
+        The RDKit molecule to rotate. Must have 3D conformer.
+
+    Returns
+    -------
+    None
+        The molecule is modified in place.
+    """
+    conf = mol.GetConformer(0)
+
+    # Horizontal flip
+    R = np.array([    
+        [-1., 0., 0., 0.],
+        [ 0., 1., 0., 0.],
+        [ 0., 0., 1., 0.],
+        [ 0., 0., 0., 1.]
+    ])
+
+    rdMolTransforms.TransformConformer(conf, R)
+
+
 def _bead_radius(bead_type):
     '''
     Determine radius for the bead circle based on bead size given in the bead type.
@@ -376,7 +403,7 @@ def draw_beads(svg, res_graph, full_mol, drawer_coords, include_hydrogens, show_
                 svg = svg.replace('</svg>', text_svg + '</svg>')
     return svg
 
-def draw_mapping(cgs_string, name=None, show_hydrogens=False, include_hydrogen_in_bead_position=None, show_mapping=True, show_bead_labels=False, show_vs=True, show_atom_indices=False, color_atoms=False, show_image=True, show_node_indicators=False, rotate_by=0, canvas_size=(300,300), scale_factor=25):
+def draw_mapping(cgs_string, name=None, show_hydrogens=False, include_hydrogen_in_bead_position=None, show_mapping=True, show_bead_labels=False, show_vs=True, show_atom_indices=False, color_atoms=False, show_image=True, show_node_indicators=False, flip=False, rotate_by=0, canvas_size=(300,300), scale_factor=25):
     '''
     Draw a CGSmiles molecule with optional bead mapping overlay using RDKIT.
     Molecules are not scaled to fit the canvas, in order to keep relative sizes of beads and atoms.
@@ -446,6 +473,8 @@ def draw_mapping(cgs_string, name=None, show_hydrogens=False, include_hydrogen_i
     full_mol = cgsmiles_to_rdkit(mol_graph)
     rdDepictor.Compute2DCoords(full_mol) # ensure 2D coordinates are present for the full molecule 
     _rotate_molecule_around_center(full_mol, rotate_by)
+    if flip:
+        _flip_molecule(full_mol)
 
     if not show_hydrogens:
         mol = Chem.RemoveHs(full_mol, updateExplicitCount=True, sanitize=False) # remove hydrogens for final drawing but keep the original coordinates  
