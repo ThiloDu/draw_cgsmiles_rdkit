@@ -63,6 +63,8 @@ def cgsmiles_to_rdkit(mol_graph, add_hydrogens=False):
     isomer_data = [d[0] for d in nx.get_node_attributes(mol_graph, 'ez_isomer').values() if d is not None]
 
     for isomer in isomer_data:  
+        isomer_type = isomer[4]
+        isomer = [node_to_rdkit_idx[idx] for idx in isomer[:4]]  # convert to rdkit indices
         if isomer[1] > isomer[2]:
             continue
         bond = mol.GetBondBetweenAtoms(isomer[1], isomer[2])
@@ -71,9 +73,9 @@ def cgsmiles_to_rdkit(mol_graph, add_hydrogens=False):
             print('    Check your CGSMILES string!')
             continue
         bond.SetStereoAtoms(isomer[0], isomer[3])
-        if isomer[4] == 'cis':
+        if isomer_type == 'cis':
             bond.SetStereo(Chem.rdchem.BondStereo.STEREOZ)  # cis
-        elif isomer[4] == 'trans':
+        elif isomer_type == 'trans':
             bond.SetStereo(Chem.rdchem.BondStereo.STEREOE)
         else:
             raise ValueError(f"Unsupported isomer type: {isomer[4]}")
