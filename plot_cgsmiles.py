@@ -14,7 +14,6 @@ from rdkit.Chem.Draw import rdMolDraw2D
 from rdkit.Geometry.rdGeometry import Point2D
 from rdkit.Chem import rdDepictor,rdMolTransforms
 
-
 def cgsmiles_to_rdkit(mol_graph, add_hydrogens=False):
     '''
     Convert a CGSmiles molecule graph to an RDKit molecule. 
@@ -504,7 +503,9 @@ def draw_mapping(cgs_string, name=None, show_hydrogens=False, include_hydrogen_i
         svg = draw_beads(svg, res_graph, mol, setup_drawer(), cgs_to_mol_idx, include_hydrogen_in_bead_position, show_vs, show_bead_labels, show_node_indicators)
 
     if name: # save SVG if name is given
-        with open(f"{name}.svg", "w") as f:
+        if not name.endswith('.svg'):
+            name = name + '.svg'
+        with open(f"{name}", "w") as f:
             f.write(svg)
     
     if show_image: # display image using matplotlib
@@ -515,6 +516,7 @@ def draw_mapping(cgs_string, name=None, show_hydrogens=False, include_hydrogen_i
         ax.imshow(img)
         ax.axis('off')
         return ax
+    return svg
 
 def draw_mapping_default(cgs_string:str, show_hydrogens = False, ax=None):
     '''
