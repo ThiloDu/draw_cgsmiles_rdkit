@@ -417,7 +417,7 @@ def draw_beads(svg, res_graph, full_mol, drawer_coords, cgs_to_mol_idx, include_
                 svg = svg.replace('</svg>', text_svg + '</svg>')
     return svg
 
-def draw_mapping(cgs_string, name=None, show_hydrogens=False, include_hydrogen_in_bead_position=None, show_mapping=True, show_bead_labels=False, show_vs=True, show_atom_indices=False, color_atoms=False, show_image=True, show_node_indicators=False, flip=False, rotate_by=0, canvas_size=(300,300), scale_factor=25):
+def draw_mapping(cgs_string, name=None, show_hydrogens=False, include_hydrogen_in_bead_position=None, show_mapping=True, show_bead_labels=False, show_vs=True, show_atom_indices=False, color_atoms=False, show_image=True, show_node_indicators=False, flip=False, rotate_by=0, canvas_size=(300,300), scale_factor=25, ax=None):
     '''
     Draw a CGSmiles molecule with optional bead mapping overlay using RDKIT.
     Molecules are not scaled to fit the canvas, in order to keep relative sizes of beads and atoms.
@@ -508,11 +508,13 @@ def draw_mapping(cgs_string, name=None, show_hydrogens=False, include_hydrogen_i
             f.write(svg)
     
     if show_image: # display image using matplotlib
+        if ax is None:
+            _, ax = plt.subplots(1, 1)
         png = cairosvg.svg2png(bytestring=svg.encode("utf-8"))
         img = Image.open(io.BytesIO(png))
-        plt.imshow(img)
-        plt.axis('off')
-        plt.show()
+        ax.imshow(img)
+        ax.axis('off')
+        return ax
 
 def draw_mapping_default(cgs_string:str, show_hydrogens = False, ax=None):
     '''
