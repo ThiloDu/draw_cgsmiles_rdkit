@@ -416,7 +416,64 @@ def draw_beads(svg, res_graph, full_mol, drawer_coords, cgs_to_mol_idx, include_
                 svg = svg.replace('</svg>', text_svg + '</svg>')
     return svg
 
-def draw_mapping(cgs_string, name=None, show_hydrogens=False, include_hydrogen_in_bead_position=None, show_mapping=True, show_bead_labels=False, show_vs=True, show_atom_indices=False, color_atoms=False, show_image=True, show_node_indicators=False, flip=False, rotate_by=0, canvas_size=(300,300), scale_factor=25, ax=None):
+def _check_vertical_lines(svg, highlight=True, threshold=0.5, tolerance=0.02):
+    '''
+    Check for vertical lines in the SVG and highlight them in red if requested.
+    Vertical lines are defined as lines with an angle of less than `threshold` degrees to the y-axis.
+    A tolerance can be set to account for small deviations from perfect verticality.
+
+    Parameters
+    ----------
+    svg : str
+        The SVG string to check.
+    highlight : bool, optional, default: True
+        Whether to highlight vertical lines in red.
+    threshold : float, optional, default: 0.5
+        The angle threshold in degrees to consider a line as vertical.
+    tolerance : float, optional, default: 0.02
+        The tolerance in degrees to account for small deviations from perfect verticality.
+    
+    Returns
+    -------
+    str or None
+    '''
+    min = 180
+    min_index = []
+
+    for i, line in enumerate(svg.split('\n')):
+        if line.strip().startswith('<path') and 'd=' in line and line.strip().endswith('/>'):
+            # get the part after d=" and before the next "
+            d_part = line.split("d='")[1].split("'")[0]
+            tokens = d_part.replace(",", " ").split()
+            if len(tokens) > 6:
+                continue
+            x1 = float(tokens[1])
+            y1 = float(tokens[2])
+            x2 = float(tokens[4])
+            y2 = float(tokens[5])
+
+            # calculate the angle between the y-axis and the line
+            if y1-y2 != 0:
+                angle = np.arctan((x1-x2)/(y1-y2)) * 180 / np.pi
+                # print(f"angle: {angle:.2f} degrees")
+            if abs(angle) <= min+tolerance:
+                min = abs(angle)
+                if abs(min - abs(angle))<tolerance:
+                    min_index.append(i)
+                else:
+                    min_index = [i]
+    if min < threshold:
+        print(f"Found vertical lines with angle {min:.2f} degrees")
+    else:
+        print(f"No vertical lines found, min angle: {min:.2f} degrees")
+    if highlight:
+        lines = svg.split('\n')
+        for i in min_index:
+            lines[i] = lines[i].replace('stroke:#000000', 'stroke:#FF0000')
+        svg = '\n'.join(lines)
+    return svg
+    
+def draw_mapping(cgs_string, name=None, show_hydrogens=False, include_hydrogen_in_bead_position=None, show_mapping=True, show_bead_labels=False, show_vs=True, show_atom_indices=False, color_atoms=False, show_image=True, show_node_indicators=False, check_orientation=False, flip=False, rotate_by=0, canvas_size=(300,300), scale_factor=25, ax=None):
     '''
     Draw a CGSmiles molecule with optional bead mapping overlay using RDKIT.
     Molecules are not scaled to fit the canvas, in order to keep relative sizes of beads and atoms.
@@ -454,6 +511,8 @@ def draw_mapping(cgs_string, name=None, show_hydrogens=False, include_hydrogen_i
         Whether to display the image using matplotlib.
     show_node_indicators : bool, optional, default: False
         Whether to show trailing capital letter from bead type if present. Used to differenciate different mappings of the same bead type.
+    check_orientation : bool, optional, default: False
+        Whether to check for vertical lines in the drawing and highlight them in red.
     rotate_by : float, optional, default: 0
         Rotate the molecule by this angle (in degrees) in the XY plane around its centroi
     canvas_size : tuple, optional, default: (300, 300)
@@ -502,6 +561,8 @@ def draw_mapping(cgs_string, name=None, show_hydrogens=False, include_hydrogen_i
     if show_mapping:
         svg = draw_beads(svg, res_graph, mol, setup_drawer(), cgs_to_mol_idx, include_hydrogen_in_bead_position, show_vs, show_bead_labels, show_node_indicators)
 
+    if check_orientation:
+        svg = _check_vertical_lines(svg, highlight=True, threshold=0.5, tolerance=0.02)
     if name: # save SVG if name is given
         if not name.endswith('.svg'):
             name = name + '.svg'
@@ -516,7 +577,7 @@ def draw_mapping(cgs_string, name=None, show_hydrogens=False, include_hydrogen_i
         ax.imshow(img)
         ax.axis('off')
         return ax
-    return svg
+    
 
 def draw_mapping_default(cgs_string:str, show_hydrogens = False, ax=None):
     '''
