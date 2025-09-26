@@ -439,7 +439,7 @@ def _check_vertical_lines(svg, highlight=True, threshold=0.5, tolerance=0.02):
     '''
     min = 180
     min_index = []
-
+    sign = '+'
     for i, line in enumerate(svg.split('\n')):
         if line.strip().startswith('<path') and 'd=' in line and line.strip().endswith('/>'):
             # get the part after d=" and before the next "
@@ -460,12 +460,16 @@ def _check_vertical_lines(svg, highlight=True, threshold=0.5, tolerance=0.02):
                 min = abs(angle)
                 if abs(min - abs(angle))<tolerance:
                     min_index.append(i)
+                    if angle < 0:
+                        sign = '-'
+                    else:
+                        sign = '+'
                 else:
                     min_index = [i]
     if min < threshold:
-        print(f"Found vertical lines with angle {min:.2f} degrees")
+        print(f"Found vertical lines with angle {sign}{min:.2f} degrees")
     else:
-        print(f"No vertical lines found, min angle: {min:.2f} degrees")
+        print(f"No vertical lines found, min angle: {sign}{min:.2f} degrees")
     if highlight:
         lines = svg.split('\n')
         for i in min_index:
