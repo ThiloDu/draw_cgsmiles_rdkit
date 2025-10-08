@@ -535,6 +535,7 @@ def draw_mapping(cgs_string, name=None, show_hydrogens=False, include_hydrogen_i
         print("Warning: show_bead_labels is set to True but show_mapping is False. Bead labels will not be displayed.")
     if include_hydrogen_in_bead_position is None: # if not explicitly set, use show_hydrogens as indicator
         include_hydrogen_in_bead_position = show_hydrogens
+        
     def setup_drawer():
         W, H = canvas_size # default 300 x 300
         minv = Point2D(1000, 1000)
