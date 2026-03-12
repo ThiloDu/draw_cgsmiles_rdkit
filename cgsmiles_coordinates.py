@@ -1,7 +1,9 @@
 import networkx as nx
+import vermouth
 from rdkit import Chem
 from rdkit.Chem import AllChem
 import cgsmiles
+import numpy as np
 
 def cgsmiles_to_rdkit(mol_graph, add_hydrogens=False):
     '''
@@ -98,60 +100,57 @@ def generate_AA_pdb(cgs_string, pdb_filename="molecule.pdb"):
 
     print(f"PDB file saved as {pdb_filename}")
 
-
 # Snippets for CG coordinates, currently not working
-# def correct_position_assignments(res_graph):
-#     '''
-#     Correct the position assignments in the resolved graph. 
-#     Needed because cgsmiles assigns positions in order, disregarding U nodes.
-#     U nodes are set to the origin initially, then moved to the centroid of their connected nodes.
+def generate_CG_pdb(cgs_string, resname):
+	res_graph, mol_graph = cgsmiles.MoleculeResolver.from_string(cgs_string).resolve()
 
-#     Parameters:
-#     ----------
-#     res_graph : networkx.Graph
-#         The resolved graph with initial position assignments.
+	generate_AA_pdb(cgs_string, f"structures/{resname}_AA.pdb")
+	mol = vermouth.pdb.read_pdb(f"structures/{resname}_AA.pdb")[0]
 
-#     Returns:
-#     -------
-#     res_graph : networkx.Graph
-#         The resolved graph with corrected position assignments.
-#     '''
-#     position_dict = {node_id: data['position'] for node_id, data in res_graph.nodes(data=True)}
-#     offset = 0
-#     for n, d in res_graph.nodes(data=True):
-#         if d['fragname'] == 'U':
-#             offset += 1
-#             res_graph.nodes[n]['position'] = np.array([0.0, 0.0, 0.0])
-#         else:
-#             res_graph.nodes[n]['position'] = position_dict[n-offset]
+	mapping = next(nx.isomorphism.GraphMatcher(mol, mol_graph).match())
 
-#     for n in res_graph.nodes:
-#         d = res_graph.nodes[n]
-#         if d['fragname'] == 'U':
-#             connected_nodes = [edge[1] if edge[0] == n else edge[0] for edge in res_graph.edges(n)]
-#             if len(connected_nodes) == 0:
-#                 raise ValueError(f'Warning: Unconnected U node at {n}, skipping')
-#             coords = [res_graph.nodes[c]["position"] for c in connected_nodes if res_graph.nodes[c]["fragname"] != 'U']
-#             d['position'] = np.mean(coords, axis=0)
-#     return res_graph
+	for node in res_graph.nodes:
+		pos = np.zeros((3))
+		fragment = res_graph.nodes[node]['graph']
+		for all_atom_node in fragment:
+			pos += mol.nodes[mapping[all_atom_node]]['position']
+		pos = np.array(pos)
+		final_pos = pos / len(fragment)
+		res_graph.nodes[node]['position'] = final_pos
 
-# def write_file(file_path, lines) -> None:
-#     '''
-#     Function that writes a list of lines to a text file.
-#     '''
-#     # check if lines is a list of strings
-#     if not all(isinstance(line, str) for line in lines):
-#         raise ValueError('lines must be a list of strings')
-#     with open(file_path, 'w') as file:
-#         file.writelines(lines)
-#     return 
+	position_dict = {node_id: data['position'] for node_id, data in res_graph.nodes(data=True)}
+	offset = 0
+	for n, d in res_graph.nodes(data=True):
+		if d['fragname'] == 'U':
+			offset += 1
+			res_graph.nodes[n]['position'] = np.array([0.0, 0.0, 0.0])
+		else:
+			res_graph.nodes[n]['position'] = position_dict[n-offset]
 
-# resname = 'A10'
-# pdb_lines = []
-# offset = 0
-# for n, d in res_graph.nodes(data=True):
-#     coords = d["position"]
-#     line = f'HETATM{n+1:5d}  {d["fragname"][:3]:<3s} {resname:<3s}     1    {coords[0]:8.3f}{coords[1]:8.3f}{coords[2]:8.3f}  1.00  0.00            \n'
-#     pdb_lines.append(line)
-# pdb_lines.append('END\n')
-# write_file(f'{resname}.pdb', pdb_lines)
+	for n in res_graph.nodes:
+		d = res_graph.nodes[n]
+		if d['fragname'] == 'U':
+			connected_nodes = [edge[1] if edge[0] == n else edge[0] for edge in res_graph.edges(n)]
+			if len(connected_nodes) == 0:
+				raise ValueError(f'Warning: Unconnected U node at {n}, skipping')
+			coords = [res_graph.nodes[c]["position"] for c in connected_nodes if res_graph.nodes[c]["fragname"] != 'U']
+			d['position'] = np.mean(coords, axis=0)
+
+	pdb_lines = []
+	for n, d in res_graph.nodes(data=True):
+		coords = d["position"]*10
+		line = f'HETATM{n+1:5d}  {d["n"][:3]:<3s} {resname:<3s}    1    {coords[0]:8.3f}{coords[1]:8.3f}{coords[2]:8.3f}  1.00  0.00            \n'
+		pdb_lines.append(line)
+	pdb_lines.append('END\n')
+	write_file(f"structures/{resname}_CG.pdb", pdb_lines)
+
+def write_file(file_path, lines) -> None:
+    '''
+    Function that writes a list of lines to a text file.
+    '''
+    # check if lines is a list of strings
+    if not all(isinstance(line, str) for line in lines):
+        raise ValueError('lines must be a list of strings')
+    with open(file_path, 'w') as file:
+        file.writelines(lines)
+    return 
