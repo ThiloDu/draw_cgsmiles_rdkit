@@ -4,6 +4,7 @@ from rdkit import Chem
 from rdkit.Chem import AllChem
 import cgsmiles
 import numpy as np
+import re
 
 def cgsmiles_to_rdkit(mol_graph, add_hydrogens=False):
     '''
@@ -100,7 +101,6 @@ def generate_AA_pdb(cgs_string, pdb_filename="molecule.pdb"):
 
     print(f"PDB file saved as {pdb_filename}")
 
-# Snippets for CG coordinates, currently not working
 def generate_CG_pdb(cgs_string, resname):
 	res_graph, mol_graph = cgsmiles.MoleculeResolver.from_string(cgs_string).resolve()
 
@@ -136,10 +136,13 @@ def generate_CG_pdb(cgs_string, resname):
 			coords = [res_graph.nodes[c]["position"] for c in connected_nodes if res_graph.nodes[c]["fragname"] != 'U']
 			d['position'] = np.mean(coords, axis=0)
 
-	pdb_lines = []
 	for n, d in res_graph.nodes(data=True):
+		res_graph.nodes[n]['index'] = int(re.search(r"\d+", d['n']).group())
+
+	pdb_lines = []
+	for n, d in sorted(res_graph.nodes(data=True), key=lambda x: x[1]['index']):
 		coords = d["position"]*10
-		line = f'HETATM{n+1:5d}  {d["n"][:3]:<3s} {resname:<3s}    1    {coords[0]:8.3f}{coords[1]:8.3f}{coords[2]:8.3f}  1.00  0.00            \n'
+		line = f'HETATM{n+1:5d}  {d["index"][:3]:<3s} {resname:<3s}    1    {coords[0]:8.3f}{coords[1]:8.3f}{coords[2]:8.3f}  1.00  0.00            \n'
 		pdb_lines.append(line)
 	pdb_lines.append('END\n')
 	write_file(f"structures/{resname}_CG.pdb", pdb_lines)

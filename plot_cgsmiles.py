@@ -124,6 +124,31 @@ def _rotate_molecule_around_center(mol, theta):
 
     rdMolTransforms.TransformConformer(conf, M)
 
+def _center_molecule(mol):
+    """
+    Center a molecule at the origin based on its centroid.
+    
+    Parameters
+    ----------
+    mol : rdkit.Chem.rdchem.Mol
+        The RDKit molecule to center. Must have 3D conformer.
+
+    Returns
+    -------
+    None
+        The molecule is modified in place.
+    """
+    conf = mol.GetConformer(0)
+
+    coords = np.array([list(conf.GetAtomPosition(i)) for i in range(mol.GetNumAtoms())])
+    centroid = coords.mean(axis=0)
+
+    # translation to origin
+    T = np.eye(4)
+    T[:3, 3] = -centroid
+
+    rdMolTransforms.TransformConformer(conf, T)
+
 def _flip_molecule(mol):
     """
     Flip a molecule horizontally in the XY plane around its centroid.
@@ -238,7 +263,55 @@ def _create_bead_circle(bead_position, name):
     circle_svg += f'\tr="{_bead_radius(name)}" />\n'
     return ''.join(circle_svg)
 
-def _create_bead_label(bead_position, bead_type, bead_name=None, type_color='#666666', name_color='#000000'):
+def _name_to_position(name, bead_position, radius, isomer=0):
+    index = int(''.join(filter(str.isdigit, name)))
+    if isomer == 'cis':
+        match index:
+            case 1:
+                position = [bead_position[0] - 1/np.sqrt(2) * 3.5 * radius, bead_position[1]]
+            case 2:
+                position = [bead_position[0] - 2 * radius, bead_position[1] - 1/np.sqrt(2) * radius]
+            case 3:
+                position = [bead_position[0] + radius, bead_position[1]+0.25*radius]
+            case 4:
+                position = [bead_position[0]-radius, bead_position[1]-0.8*radius]
+            case 5:
+                position = [bead_position[0]-radius, bead_position[1]-radius]
+            case 6:
+                position = [bead_position[0] + 1.1 * radius, bead_position[1]+radius]
+            case 7:
+                position = [bead_position[0] - 2.6* radius, bead_position[1]+1.3*radius]
+            case 8:
+                position = [bead_position[0] - 2.6* radius, bead_position[1]+1.75*radius]
+            case 9:
+                position = [bead_position[0]-radius, bead_position[1]-0.8*radius]
+            case _:
+                position = [bead_position[0] - 2.6* radius, bead_position[1]+1*radius]
+    elif isomer == 'trans':
+        match index:
+            case 1:
+                position = [bead_position[0] - 1/np.sqrt(2) * 3.5 * radius, bead_position[1]]
+            case 2:
+                position = [bead_position[0] - 2 * radius, bead_position[1] - 1/np.sqrt(2) * radius]
+            case 3:
+                position = [bead_position[0] + radius, bead_position[1]+0.25*radius]
+            case 4:
+                position = [bead_position[0]-radius, bead_position[1]-0.8*radius]
+            case 5:
+                position = [bead_position[0]-radius, bead_position[1]-radius]
+            case 6:
+                position = [bead_position[0] - 2.6* radius, bead_position[1]]
+            case 7:
+                position = [bead_position[0] - 2* radius, bead_position[1]+2.3*radius]
+            case 8:
+                position = [bead_position[0] + 1.1 * radius, bead_position[1]+1.5*radius]
+            case 9:
+                position = [bead_position[0]-radius, bead_position[1]-0.8*radius]
+            case _:
+                position = [bead_position[0] - 1.1 * radius, bead_position[1]-1*radius]
+    return position
+
+def _create_bead_label(bead_position, bead_type, bead_name=None, type_color='#666666', name_color='#000000', azobenzene_positioning=False):
     '''
     Create SVG text element for a bead label.
 
@@ -261,7 +334,14 @@ def _create_bead_label(bead_position, bead_type, bead_name=None, type_color='#66
         The SVG text element as a string.
     '''
     fontsize = 13
-    position = [bead_position[0] + 1/np.sqrt(2) * _bead_radius(bead_type), bead_position[1] - 1/np.sqrt(2) *_bead_radius(bead_type)] 
+    if bead_type == 'U' and bead_name is not None: # only show bead name in black
+        type_color = '#000000' # use black color for virtual nodes
+        bead_type = bead_name
+
+    if azobenzene_positioning: # special positioning for azobenzene to avoid overlap of bead type and name
+        position = _name_to_position(bead_name, bead_position,  _bead_radius(bead_type), azobenzene_positioning)
+    else:
+        position = [bead_position[0] + 1/np.sqrt(2) * _bead_radius(bead_type), bead_position[1] - 1/np.sqrt(2) *_bead_radius(bead_type)] 
 
     # define text element
     text_svg = ['<text\n']
@@ -270,12 +350,8 @@ def _create_bead_label(bead_position, bead_type, bead_name=None, type_color='#66
     text_svg += f'\tx="{position[0]}"\n'
     text_svg += f'\ty="{position[1]}">\n'
 
-    if bead_type == 'U' and bead_name is not None: # only show bead name in black
-        type_color = '#000000' # use black color for virtual nodes
-        bead_type = bead_name
-    
     # define tspan element for bead name if given
-    elif bead_name is not None:
+    if not bead_type.startswith('U') and bead_name is not None:
         text_svg += f'\t<tspan x="{position[0]}" y="{position[1]-fontsize}" font-size="{fontsize}px" fill="{name_color}" font-family="sans-serif">{bead_name}</tspan>\n'
     # define tspan element for bead type
     text_svg += f'\t<tspan x="{position[0]}" y="{position[1]}" font-size="{fontsize}px" fill="{type_color}" font-family="sans-serif">{bead_type}</tspan>\n'
@@ -333,7 +409,7 @@ def correct_graph_assignment(resgraph):
             resgraph.nodes(data=True)[node]['graph'] = nx.Graph() # set empty graph for virtual node
     return resgraph
 
-def draw_beads(svg, res_graph, full_mol, drawer_coords, cgs_to_mol_idx, include_hydrogens, show_vs, add_names, show_node_indicators):
+def draw_beads(svg, res_graph, full_mol, drawer_coords, cgs_to_mol_idx, include_hydrogens, show_vs, add_names, show_node_indicators, azb_label_pos):
     '''
     Draw beads on top of the rdkit molecule SVG.
     Bead positions are calculated as the center of geometry of their constituent atoms.
@@ -394,7 +470,7 @@ def draw_beads(svg, res_graph, full_mol, drawer_coords, cgs_to_mol_idx, include_
         if add_names: # place bead type top right of bead
             if not show_node_indicators: # remove trailing capital letter from bead type if present
                 bead_type = bead_type[:-1] if bead_type[-1].isupper() and len(bead_type) > 1 else bead_type
-            text_svg = _create_bead_label(bead_position, bead_type, bead_name)
+            text_svg = _create_bead_label(bead_position, bead_type, bead_name, azobenzene_positioning=azb_label_pos)
             svg = svg.replace('</svg>', text_svg + '</svg>')
 
     if show_vs: # add virtual nodes if requested
@@ -412,7 +488,7 @@ def draw_beads(svg, res_graph, full_mol, drawer_coords, cgs_to_mol_idx, include_
             circle_svg = _create_bead_circle(bead_position, bead_type)
             svg = svg.replace('</svg>', circle_svg + '</svg>')
             if add_names: # place bead type top right of bead
-                text_svg = _create_bead_label(bead_position, bead_type, bead_name) # use black color for virtual nodes
+                text_svg = _create_bead_label(bead_position, bead_type, bead_name, azobenzene_positioning=azb_label_pos) # use black color for virtual nodes
                 svg = svg.replace('</svg>', text_svg + '</svg>')
     return svg
 
@@ -477,7 +553,7 @@ def _check_vertical_lines(svg, highlight=True, threshold=0.5, tolerance=0.02):
         svg = '\n'.join(lines)
     return svg
     
-def draw_mapping(cgs_string, name=None, show_hydrogens=False, include_hydrogen_in_bead_position=None, show_mapping=True, show_bead_labels=False, show_vs=True, show_atom_indices=False, color_atoms=False, show_image=True, show_node_indicators=False, check_orientation=False, flip=False, rotate_by=0, canvas_size=(300,300), scale_factor=25, ax=None):
+def draw_mapping(cgs_string, name=None, show_hydrogens=False, include_hydrogen_in_bead_position=None, show_mapping=True, show_bead_labels=False, show_vs=True, show_atom_indices=False, color_atoms=False, show_image=True, show_node_indicators=False, check_orientation=False, flip=False, azb_label_pos=False, rotate_by=0, canvas_size=(300,300), scale_factor=25, ax=None):
     '''
     Draw a CGSmiles molecule with optional bead mapping overlay using RDKIT.
     Molecules are not scaled to fit the canvas, in order to keep relative sizes of beads and atoms.
@@ -518,7 +594,7 @@ def draw_mapping(cgs_string, name=None, show_hydrogens=False, include_hydrogen_i
     check_orientation : bool, optional, default: False
         Whether to check for vertical lines in the drawing and highlight them in red.
     rotate_by : float, optional, default: 0
-        Rotate the molecule by this angle (in degrees) in the XY plane around its centroi
+        Rotate the molecule by this angle (in degrees) in the XY plane around its centroid
     canvas_size : tuple, optional, default: (300, 300)
         The size of the drawing canvas in pixels. 
     scale_factor : int, optional, default: 25
@@ -536,6 +612,8 @@ def draw_mapping(cgs_string, name=None, show_hydrogens=False, include_hydrogen_i
     if include_hydrogen_in_bead_position is None: # if not explicitly set, use show_hydrogens as indicator
         include_hydrogen_in_bead_position = show_hydrogens
         
+    if azb_label_pos and azb_label_pos not in ['cis', 'trans']:
+        raise ValueError("azb_label_pos must be either 'cis' or 'trans'")
     def setup_drawer():
         W, H = canvas_size # default 300 x 300
         minv = Point2D(1000, 1000)
@@ -552,6 +630,7 @@ def draw_mapping(cgs_string, name=None, show_hydrogens=False, include_hydrogen_i
     if flip:
         _flip_molecule(mol)
     _rotate_molecule_around_center(mol, rotate_by)    
+    # _center_molecule(mol)
 
     # Prepare drawer for final drawing
     drawer_final = setup_drawer()
@@ -564,7 +643,7 @@ def draw_mapping(cgs_string, name=None, show_hydrogens=False, include_hydrogen_i
     svg = drawer_final.GetDrawingText()
 
     if show_mapping:
-        svg = draw_beads(svg, res_graph, mol, setup_drawer(), cgs_to_mol_idx, include_hydrogen_in_bead_position, show_vs, show_bead_labels, show_node_indicators)
+        svg = draw_beads(svg, res_graph, mol, setup_drawer(), cgs_to_mol_idx, include_hydrogen_in_bead_position, show_vs, show_bead_labels, show_node_indicators, azb_label_pos)
 
     if check_orientation:
         svg = _check_vertical_lines(svg, highlight=True, threshold=0.5, tolerance=0.02)
