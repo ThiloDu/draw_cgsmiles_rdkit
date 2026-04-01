@@ -268,15 +268,15 @@ def _name_to_position(name, bead_position, radius, isomer=0):
     if isomer == 'cis':
         match index:
             case 1:
-                position = [bead_position[0] - 1/np.sqrt(2) * 3.5 * radius, bead_position[1]]
+                position = [bead_position[0] - 1/np.sqrt(2) * 4 * radius, bead_position[1]]
             case 2:
-                position = [bead_position[0] - 2 * radius, bead_position[1] - 1/np.sqrt(2) * radius]
+                position = [bead_position[0] - 2.5 * radius, bead_position[1] - 1/np.sqrt(2) * radius]
             case 3:
                 position = [bead_position[0] + radius, bead_position[1]+0.25*radius]
             case 4:
-                position = [bead_position[0]-radius, bead_position[1]-0.8*radius]
+                position = [bead_position[0]-radius, bead_position[1]-1.25*radius]
             case 5:
-                position = [bead_position[0]-radius, bead_position[1]-radius]
+                position = [bead_position[0]-radius, bead_position[1]-1.25*radius]
             case 6:
                 position = [bead_position[0] + 1.1 * radius, bead_position[1]+radius]
             case 7:
@@ -284,29 +284,29 @@ def _name_to_position(name, bead_position, radius, isomer=0):
             case 8:
                 position = [bead_position[0] - 2.6* radius, bead_position[1]+1.75*radius]
             case 9:
-                position = [bead_position[0]-radius, bead_position[1]-0.8*radius]
+                position = [bead_position[0]-radius, bead_position[1]-1.25*radius]
             case _:
                 position = [bead_position[0] - 2.6* radius, bead_position[1]+1*radius]
     elif isomer == 'trans':
         match index:
             case 1:
-                position = [bead_position[0] - 1/np.sqrt(2) * 3.5 * radius, bead_position[1]]
+                position = [bead_position[0] - 1/np.sqrt(2) * 4 * radius, bead_position[1]]
             case 2:
                 position = [bead_position[0] - 2 * radius, bead_position[1] - 1/np.sqrt(2) * radius]
             case 3:
                 position = [bead_position[0] + radius, bead_position[1]+0.25*radius]
             case 4:
-                position = [bead_position[0]-radius, bead_position[1]-0.8*radius]
+                position = [bead_position[0]-radius, bead_position[1]-1.25*radius]
             case 5:
-                position = [bead_position[0]-radius, bead_position[1]-radius]
+                position = [bead_position[0]-radius, bead_position[1]-1.25*radius]
             case 6:
-                position = [bead_position[0] - 2.6* radius, bead_position[1]]
+                position = [bead_position[0] - 2.75* radius, bead_position[1]-0.25*radius]
             case 7:
                 position = [bead_position[0] - 2* radius, bead_position[1]+2.3*radius]
             case 8:
                 position = [bead_position[0] + 1.1 * radius, bead_position[1]+1.5*radius]
             case 9:
-                position = [bead_position[0]-radius, bead_position[1]-0.8*radius]
+                position = [bead_position[0]-radius, bead_position[1]-1.25*radius]
             case _:
                 position = [bead_position[0] - 1.1 * radius, bead_position[1]-1*radius]
     return position
