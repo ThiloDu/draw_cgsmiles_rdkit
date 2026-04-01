@@ -137,7 +137,7 @@ def generate_CG_pdb(cgs_string, resname):
 			d['position'] = np.mean(coords, axis=0)
 
 	for n, d in res_graph.nodes(data=True):
-		res_graph.nodes[n]['index'] = int(re.search(r"\d+", d['n']).group())
+		res_graph.nodes[n]['index'] = str(int(re.search(r"\d+", d['n']).group()))
 
 	pdb_lines = []
 	for n, d in sorted(res_graph.nodes(data=True), key=lambda x: x[1]['index']):
