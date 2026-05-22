@@ -142,7 +142,7 @@ def generate_CG_pdb(cgs_string, resname):
 	pdb_lines = []
 	for n, d in sorted(res_graph.nodes(data=True), key=lambda x: x[1]['index']):
 		coords = d["position"]*10
-		line = f'HETATM{n+1:5d}  {d["index"][:3]:<3s} {resname:<3s}    1    {coords[0]:8.3f}{coords[1]:8.3f}{coords[2]:8.3f}  1.00  0.00            \n'
+		line = f'HETATM{n+1:5d}  {d["n"][:3]:<3s} {resname:<3s}    1    {coords[0]:8.3f}{coords[1]:8.3f}{coords[2]:8.3f}  1.00  0.00            \n'
 		pdb_lines.append(line)
 	pdb_lines.append('END\n')
 	write_file(f"structures/{resname}_CG.pdb", pdb_lines)
