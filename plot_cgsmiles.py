@@ -456,12 +456,16 @@ def draw_beads(svg, res_graph, full_mol, drawer_coords, cgs_to_mol_idx, include_
 
         # compute bead position as center of geometry of its atoms
         coords = []
+        weights = []
         for atom, data in bead_data['graph'].nodes(data=True):
             if not include_hydrogens and data['element'] == 'H':
                 continue
             atom = cgs_to_mol_idx[atom]
             coords.append(drawer_coords.GetDrawCoords(atom))
-        bead_position = np.mean(coords, axis=0)
+            weights.append(data['weight'])
+        if np.all(np.array(weights) == 0): 
+            raise ValueError(f"All weights are zero for bead {bead} of type {bead_type}. Cannot compute bead position.")
+        bead_position = np.average(coords, axis=0, weights=weights)
         bead_positions[bead] = bead_position
         
         # draw bead as circle and optionally add bead name
