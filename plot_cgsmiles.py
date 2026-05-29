@@ -443,7 +443,7 @@ def draw_beads(svg, res_graph, full_mol, drawer_coords, cgs_to_mol_idx, include_
     drawer_coords.DrawMolecule(full_mol)
     drawer_coords.FinishDrawing()  # optional but safe
 
-    correct_graph_assignment(res_graph) # ensure correct mapping if virtual nodes are present
+    # correct_graph_assignment(res_graph) # ensure correct mapping if virtual nodes are present, not necessary after CGSmiles update
     virtual_edges = detect_virtual_nodes(res_graph)
 
     bead_positions = {} 
